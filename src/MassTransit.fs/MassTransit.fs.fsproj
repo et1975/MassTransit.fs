@@ -21,6 +21,7 @@
     <Compile Include="DSL.fs" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="MassTransit" Version="8.0.6" />
     <PackageReference Include="Ply" Version="0.3.1" />
   </ItemGroup>
 </Project>

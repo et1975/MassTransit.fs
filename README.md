@@ -2,41 +2,43 @@
 
 ## DSL for sagas (tenantive)
 ```fsharp
-type States = AwaitingUpgradeCommandStarted | AwaitingUpgradeCommandResult
 
-stateMachine<States> {
-    events [
-        event<UpgradeExpired> {
-            correlatedBy (fun m -> m.Message.OrderId)
-        }
-        event<UpgradeCommandStarted> {
-            correlatedBy (fun m -> m.Message.OrderId)
-            onMissing instanceDiscard
-        }
-    ]
-    configure [
-        initially {
-            on<Upgrade> {
-                activity<CopyInitialData> {
-                    ifElse instanceResultIsFailure (
-                        transition { toFinal },
-                        activity<PublishUpgradeExpired {
-                            activity<PublishUpgradeOrderCreated> {
-                                transition { to AwaitingUpgradeCommandStarted }
+type States = AwaitingUpgradeCommandStarted | AwaitingUpgradeCommandResult
+let result =
+    stateMachine<States> {
+        events [
+            event<UpgradeExpired> {
+                correlatedBy (fun m -> m.Message.OrderId)
+            }
+            event<UpgradeCommandStarted> {
+                correlatedBy (fun m -> m.Message.OrderId)
+                onMissing instanceDiscard
+            }
+        ]
+        configure [
+            initially {
+                on<Upgrade> {
+                    activity<CopyInitialData> {
+                        ifElse instanceResultIsFailure (
+                            transition { toFinal },
+                            activity<PublishUpgradeExpired {
+                                activity<PublishUpgradeOrderCreated> {
+                                    transition { to AwaitingUpgradeCommandStarted }
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
-        }
-        during AwaitingUpgradeCommandStarted {
-            on<UpgradeCommandFinished> {
-                handle handleUpgradeCommandFinishedEvent
-                transition { toFinal }
+            during AwaitingUpgradeCommandStarted {
+                on<UpgradeCommandFinished> {
+                    handle handleUpgradeCommandFinishedEvent
+                    transition { toFinal }
+                }
             }
-        }
-    ]
-}
+        ]
+    }
+    |> StateMachine.make
 ```
 
 ## Building
