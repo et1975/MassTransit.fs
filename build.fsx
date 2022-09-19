@@ -1,12 +1,11 @@
 #!/usr/bin/env -S dotnet fsi
-#r "nuget: nuget FSharp.Core ~> 4.7"
-#r "nuget: nuget Fake.DotNet.Cli"
-#r "nuget: nuget Fake.IO.FileSystem"
-#r "nuget: nuget Fake.Core.ReleaseNotes"
-#r "nuget: nuget Fake.Core.Target"
-#r "nuget: nuget Fake.Tools.Git"
-#r "nuget: nuget Microsoft.Extensions.Configuration.Json"
-#r "nuget: nuget Microsoft.Extensions.Configuration.Binder"
+#r "nuget: Fake.DotNet.Cli"
+#r "nuget: Fake.IO.FileSystem"
+#r "nuget: Fake.Core.ReleaseNotes"
+#r "nuget: Fake.Core.Target"
+#r "nuget: Fake.Tools.Git"
+#r "nuget: Microsoft.Extensions.Configuration.Json"
+#r "nuget: Microsoft.Extensions.Configuration.Binder"
 
 open Fake.Core
 open Fake.Core.TargetOperators
