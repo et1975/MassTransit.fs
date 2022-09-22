@@ -15,17 +15,22 @@ type TestSaga() =
 
 type TestMachine() =
     inherit ModifierStateMachine<TestSaga>(
-        stateMachine<S,TestSaga> {
-                initially [
-                    on<TestSaga,E> {
-                        transition (State.Of S.A)
-                    }
-                ]
-                during S.A [
-                    on<TestSaga,E> {
-                        transition State.Final
-                    }
-                ]
+        stateMachine<TestSaga, S> {
+            initially [
+                on {
+                    transition (State.Of S.A)
+                }
+            ]
+            during (State.Of S.A) [
+                on {
+                    transition State.Final
+                }
+            ]
+            whenEnter (State.Of S.B) [
+                activity {
+                    transition State.Final
+                }
+            ]
         }
     )
 

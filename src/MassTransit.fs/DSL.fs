@@ -20,18 +20,20 @@ type State =
             smm.State(string e, &state) |> ignore
             state
 
-    static member Final (smm: IStateMachineModifier<'saga>) =
-        smm.Final
+    static member Final (smm: IStateMachineModifier<'saga>) = smm.Final
+    static member Initial (smm: IStateMachineModifier<'saga>) = smm.Initial
 
 
-type ActivityBuilder<'saga,'event 
-                when 'saga: not struct
-                and 'saga :> ISaga
-                and 'saga :> SagaStateMachineInstance
-                and 'event: not struct>() =
-    let bind cfg state (builder:IStateMachineEventActivitiesBuilder<'saga>, smm:IStateMachineModifier<'saga>) =
-        state (builder,smm)
-        builder.When(Event<'event>.Of smm, tee (tuple smm >> cfg)) |> ignore
+type ActivityBuilder<'saga
+                    when 'saga: not struct
+                    and 'saga :> ISaga
+                    and 'saga :> SagaStateMachineInstance>
+        (apply: (EventActivityBinder<'saga> * IStateMachineModifier<'saga> -> unit) ->
+                EventActivityBinder<'saga> * IStateMachineModifier<'saga> -> 
+                unit) =
+    let bind (cfg: EventActivityBinder<'saga> * IStateMachineModifier<'saga> -> unit) 
+             (state: EventActivityBinder<'saga> * IStateMachineModifier<'saga> -> unit) =
+        tee state >> apply cfg
 
     member _.Yield _ = ignore
 
@@ -42,6 +44,42 @@ type ActivityBuilder<'saga,'event
     [<CustomOperation "transition">]
     member _.Transition(state, mkState) =
         state |> bind (fun (binder,smm) -> binder.TransitionTo(mkState smm) |> ignore)
+
+    [<CustomOperation "handle">]
+    member _.Handle(state, handler) =
+        state |> bind (fun (binder,smm) -> binder.Then(handler) |> ignore)
+
+    [<CustomOperation "ofType">]
+    member _.OfType<'activity when 'activity: not struct
+                              and 'activity :> IStateMachineActivity<'saga>>
+            (state) =
+        state |> bind (fun (binder,_) -> binder.Activity(fun x -> x.OfType<'activity>()) |> ignore)
+
+type ActivityBuilder<'saga,'event 
+                    when 'saga: not struct
+                    and 'saga :> ISaga
+                    and 'saga :> SagaStateMachineInstance
+                    and 'event: not struct>
+        (apply: (EventActivityBinder<'saga,'event> * IStateMachineModifier<'saga> -> unit) ->
+                IStateMachineEventActivitiesBuilder<'saga> * IStateMachineModifier<'saga> -> 
+                unit) =
+    let bind (cfg: EventActivityBinder<'saga,'event> * IStateMachineModifier<'saga> -> unit) 
+             (state: IStateMachineEventActivitiesBuilder<'saga> * IStateMachineModifier<'saga> -> unit) =
+        tee state >> apply cfg
+
+    member _.Yield _ = ignore
+
+    [<CustomOperation "ifElse">]
+    member _.IfElse(state,cond,onTrue,onFalse) =
+        state |> bind (fun (binder,_) -> binder.IfElse(cond, onTrue, onFalse) |> ignore)
+
+    [<CustomOperation "transition">]
+    member _.Transition(state, mkState) =
+        state |> bind (fun (binder,smm) -> binder.TransitionTo(mkState smm) |> ignore)
+
+    [<CustomOperation "handle">]
+    member _.Handle(state, handler) =
+        state |> bind (fun (binder,smm) -> binder.Then(handler) |> ignore)
 
     [<CustomOperation "ofType">]
     member _.OfType<'activity when 'activity: not struct
@@ -56,15 +94,8 @@ type ActivityBuilder<'saga,'event
             (state) =
         state |> bind (fun (binder,_) -> binder.Activity(fun x -> x.OfInstanceType<'activity>()) |> ignore)
 
-
-// type ActivityBuilder<'saga
-//         when 'saga: not struct
-//         and 'saga :> ISaga
-//         and 'saga :> SagaStateMachineInstance>() =
-
-
 [<AutoOpen>]
-module internal Internals =
+module internal Adapters =
     [<RequireQualifiedAccess>]
     type State<'enum when 'enum :> Enum and 'enum: struct and 'enum: (new: unit -> 'enum)> =
         static member Declare (smm: IStateMachineModifier<'saga>) = 
@@ -78,10 +109,18 @@ module internal Internals =
         static member During (mkState: _ -> MassTransit.State<'saga>) (smm: IStateMachineModifier<'saga>) = 
             smm.During(mkState smm), smm
 
+        static member DuringAny (smm: IStateMachineModifier<'saga>) = 
+            smm.DuringAny(), smm
+        static member Tuple  (mkState: _ -> MassTransit.State<'saga>) (smm: IStateMachineModifier<'saga>) = 
+            mkState smm, smm
+
     [<RequireQualifiedAccess>]
     type Activity =
-        static member Apply (activities:#seq<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) args =
+        static member BuildAll (activities:#seq<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) args =
             for a in activities do a args
+        static member WhenEnter (activities:#seq<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) (state, smm:IStateMachineModifier<'saga>) =
+            smm.WhenEnter(state, tee (fun binder -> for a in activities do a (binder,smm)))
+            |> ignore
 
 type EventBuilder() = 
     member _.Yield _ = List.empty<IStateMachineModifier<'saga> -> unit>
@@ -92,23 +131,7 @@ type EventBuilder() =
     member _.OnMissing(state:_, _) : list<IStateMachineModifier<'saga> -> unit>=
         state
 
-// type ActivityBuilder<'event when 'event: not struct>() = 
-//     member _.Yield _ = List.empty<EventActivityBinder<'saga,'event> -> unit>
-//     [<CustomOperation "ifElse">]
-//     member _.Conditional(state:_, onTrue, onFalse) : list<EventActivityBinder<'saga,'event> -> unit> =
-//         state
-//     [<CustomOperation "transition">]
-//     member _.Transition(state:_, _) : list<EventActivityBinder<'saga,'event> -> unit> =
-//         state
-//     [<CustomOperation "ofType">]
-//     member _.OfType<'activity>(state:_, _) : list<EventActivityBinder<'saga,'event> -> unit> =
-//         state
-//     [<CustomOperation "ofInstanceType">]
-//     member _.OfInstanceType<'activity>(state:_, _) : list<EventActivityBinder<'saga,'event> -> unit> =
-//         state
-
-
-type StateMachineBuilder<'enum, 'saga
+type StateMachineBuilder<'saga, 'enum
         when 'saga :> SagaStateMachineInstance
         and 'saga : not struct 
         and 'enum :> Enum and 'enum: struct and 'enum: (new: unit -> 'enum)>() = 
@@ -119,35 +142,47 @@ type StateMachineBuilder<'enum, 'saga
         state @ List.collect id events
     
     [<CustomOperation "instanceState">]
-    member _.InstanceState(state: list<IStateMachineModifier<'saga> -> unit>, property:Linq.Expressions.Expression<Func<'saga,MassTransit.State>>) =
+    member _.InstanceState(state: list<IStateMachineModifier<'saga> -> unit>,
+                           property:Linq.Expressions.Expression<Func<'saga,MassTransit.State>>) =
         (fun (smm:IStateMachineModifier<'saga>) -> smm.InstanceState property |> ignore) :: state
     
     [<CustomOperation "initially">]
-    member _.Initially(
-            state: list<IStateMachineModifier<'saga> -> unit>, 
-            activities: list<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) =
-        [State<'enum>.Initially >> Activity.Apply activities] @ state
+    member _.Initially(state: list<IStateMachineModifier<'saga> -> unit>, 
+                       activities: list<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) =
+        [State<'enum>.Initially >> Activity.BuildAll activities] @ state
+    
+    [<CustomOperation "duringAny">]
+    member _.DuringAny(state: list<IStateMachineModifier<'saga> -> unit>,
+                       activities: list<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) =
+        [State<'enum>.DuringAny >> Activity.BuildAll activities] @ state
     
     [<CustomOperation "during">]
-    member _.During(
-            state: list<IStateMachineModifier<'saga> -> unit>,
-            stateEnum: 'enum,
-            activities: list<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) : list<IStateMachineModifier<'saga> -> unit> =
-        [State<'enum>.During (State.Of stateEnum) >> Activity.Apply activities] @ state
+    member _.During(state: list<IStateMachineModifier<'saga> -> unit>,
+                    mkState: IStateMachineModifier<'saga> -> MassTransit.State<'saga>,
+                    activities: list<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) =
+        [State<'enum>.During mkState >> Activity.BuildAll activities] @ state
+
+    [<CustomOperation "whenEnter">]
+    member _.WhenEnter(state: list<IStateMachineModifier<'saga> -> unit>,
+                       mkState: IStateMachineModifier<'saga> -> MassTransit.State<'saga>,
+                       activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) =
+        [State<'enum>.Tuple mkState >> Activity.WhenEnter activities] @ state
     
 [<AutoOpen>]
 module Builders =
-    let stateMachine<'enum,'saga
+    let stateMachine<'saga, 'enum
             when 'saga :> SagaStateMachineInstance
             and 'saga : not struct 
-            and 'enum :> Enum and 'enum: struct and 'enum: (new: unit -> 'enum)> = StateMachineBuilder<'enum, 'saga>()
+            and 'enum :> Enum and 'enum: struct and 'enum: (new: unit -> 'enum)> = StateMachineBuilder<'saga, 'enum>()
     let on<'saga,'event
             when 'saga: not struct
             and 'saga :> ISaga
             and 'saga :> SagaStateMachineInstance
-            and 'event: not struct> = ActivityBuilder<'saga, 'event>()
-    // let activity<'saga,'event
-    //         when 'saga: not struct
-    //         and 'saga :> ISaga
-    //         and 'saga :> SagaStateMachineInstance> = ActivityBuilder<'saga>()
+            and 'event: not struct> =
+        ActivityBuilder<'saga, 'event>(fun cfg (builder:IStateMachineEventActivitiesBuilder<'saga>,smm:IStateMachineModifier<'saga>) -> builder.When(Event<'event>.Of smm, tee (tuple smm >> cfg)) |> ignore)
+    let activity<'saga
+            when 'saga: not struct
+            and 'saga :> ISaga
+            and 'saga :> SagaStateMachineInstance> =
+        ActivityBuilder<'saga>(fun cfg args -> cfg args |> ignore)
         

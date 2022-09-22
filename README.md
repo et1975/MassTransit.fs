@@ -26,8 +26,14 @@ type UpgradeStateMachine() =
                                       transition (State.Of AwaitingUpgradeCommandStarted) }
                 }
             ]
-            during AwaitingUpgradeCommandStarted [
+            during (State.Of AwaitingUpgradeCommandStarted) [
                 on<UpgradeCommandFinished> {
+                    handle handleUpgradeCommandFinishedEvent
+                    transition State.Final
+                }
+            ]
+            whenEnter State.Final [
+                activity {
                     handle handleUpgradeCommandFinishedEvent
                     transition State.Final
                 }
