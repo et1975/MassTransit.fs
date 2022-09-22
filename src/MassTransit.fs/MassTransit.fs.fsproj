@@ -19,6 +19,7 @@
   <ItemGroup>
     <Compile Include="Prelude.fs" />
     <Compile Include="DSL.fs" />
+    <Compile Include="ModifierStateMachine.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="MassTransit" Version="8.0.6" />

@@ -4,41 +4,35 @@
 ```fsharp
 
 type States = AwaitingUpgradeCommandStarted | AwaitingUpgradeCommandResult
-let result =
-    stateMachine<States> {
-        events [
-            event<UpgradeExpired> {
-                correlatedBy (fun m -> m.Message.OrderId)
-            }
-            event<UpgradeCommandStarted> {
-                correlatedBy (fun m -> m.Message.OrderId)
-                onMissing instanceDiscard
-            }
-        ]
-        configure [
-            initially {
-                on<Upgrade> {
-                    activity<CopyInitialData> {
-                        ifElse instanceResultIsFailure (
-                            transition { toFinal },
-                            activity<PublishUpgradeExpired {
-                                activity<PublishUpgradeOrderCreated> {
-                                    transition { to AwaitingUpgradeCommandStarted }
-                                }
-                            }
-                        )
-                    }
+type UpgradeStateMachine() =
+    inherit ModifierStateMachine<UpgradeStateMachineState>(
+        stateMachine<States> {
+            events [
+                event<UpgradeExpired> {
+                    correlatedBy (fun m -> m.Message.OrderId)
                 }
-            }
-            during AwaitingUpgradeCommandStarted {
+                event<UpgradeCommandStarted> {
+                    correlatedBy (fun m -> m.Message.OrderId)
+                    onMissing Event.discard
+                }
+            ]
+            initially [
+                on<Upgrade> {
+                    ofType<CopyInitialData> 
+                    ifElse instanceResultIsFailure
+                           activity { transition State.Final }
+                           activity { ofInstanceType<PublishUpgradeExpired>
+                                      ofType<PublishUpgradeOrderCreated>
+                                      transition (State.Of AwaitingUpgradeCommandStarted) }
+                }
+            ]
+            during AwaitingUpgradeCommandStarted [
                 on<UpgradeCommandFinished> {
                     handle handleUpgradeCommandFinishedEvent
-                    transition { toFinal }
+                    transition State.Final
                 }
-            }
-        ]
-    }
-    |> StateMachine.make
+            ]
+        })
 ```
 
 ## Building
