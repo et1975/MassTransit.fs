@@ -2,7 +2,6 @@ module MassTransit.FSharp.Tests
 
 open System
 open MassTransit
-open Swensen.Unquote
 open Expecto
 
 type S = A = 0| B = 1
@@ -13,23 +12,60 @@ type TestSaga() =
     interface ISaga with
         member val CorrelationId = Guid.Empty with get,set
 
+type TestEventActivity() =
+    interface IStateMachineActivity<TestSaga,E> with
+        member this.Accept(visitor) = visitor.Visit(this) 
+        member this.Execute(ctx: BehaviorContext<TestSaga, E>, next: IBehavior<TestSaga, E>) = next.Execute ctx
+        member this.Faulted<'exn when 'exn :> exn>(context: BehaviorExceptionContext<TestSaga,E, 'exn>, next: IBehavior<TestSaga, E>) = next.Faulted(context)
+        member this.Probe(context:ProbeContext) = context.CreateScope(this.GetType().Name) |> ignore<ProbeContext>
+
+type TestStateActivity() =
+    interface IStateMachineActivity<TestSaga,State> with
+        member this.Accept(visitor) = visitor.Visit(this) 
+        member this.Execute(ctx: BehaviorContext<TestSaga, State>, next: IBehavior<TestSaga, State>) = next.Execute ctx
+        member this.Faulted<'exn when 'exn :> exn>(context: BehaviorExceptionContext<TestSaga, State, 'exn>, next: IBehavior<TestSaga, State>) = next.Faulted(context)
+        member this.Probe(context:ProbeContext) = context.CreateScope(this.GetType().Name) |> ignore<ProbeContext>
+
+type TestSagaActivity() =
+    interface IStateMachineActivity<TestSaga> with
+        member this.Accept(visitor) = visitor.Visit(this) 
+        member this.Execute(ctx: BehaviorContext<TestSaga>, next: IBehavior<TestSaga>) = next.Execute ctx
+        member this.Execute(context: BehaviorContext<TestSaga,'T>, next: IBehavior<TestSaga,'T>) = (this :> IStateMachineActivity<TestSaga>).Execute(context, next)
+        member this.Faulted(context: BehaviorExceptionContext<TestSaga,'T,'TException>, next: IBehavior<TestSaga,'T>) = next.Faulted(context)
+        member this.Faulted<'exn when 'exn :> exn>(context: BehaviorExceptionContext<TestSaga, 'exn>, next: IBehavior<TestSaga>) = next.Faulted(context)
+        member this.Probe(context:ProbeContext) = context.CreateScope(this.GetType().Name) |> ignore<ProbeContext>
+        
 type TestMachine() =
     inherit ModifierStateMachine<TestSaga>(
         stateMachine<TestSaga, S> {
             initially [
-                on {
+                on<TestSaga,E> (eventActivity {
                     transition (State.Of S.A)
-                }
+                    bind Activity.OfType<TestEventActivity>
+                    bind Activity.OfInstanceType<TestSagaActivity>
+                    conditionally (fun _ -> true) (eventActivity { transition State.Final })
+                })
             ]
             during (State.Of S.A) [
-                on {
-                    transition State.Final
+                onFiltered<TestSaga,E> (fun _ ->true) (eventActivity { transition State.Final })
+            ]
+            beforeEnter (State.Of S.B) [
+                stateActivity {
+                    bind Activity.OfInstanceType<TestSagaActivity>
+                    conditionally (fun _ -> true) (stateActivity { bind Activity.OfType<TestStateActivity> })
                 }
             ]
             whenEnter (State.Of S.B) [
                 activity {
-                    transition State.Final
+                    bind Activity.OfInstanceType<TestSagaActivity>
                 }
+                activity {
+                    transition State.Final
+                    conditionally (fun _ -> true) (activity { transition State.Final })
+                }
+            ]
+            afterLeaveAny [
+                stateActivity { bind Activity.OfType<TestStateActivity> }
             ]
         }
     )

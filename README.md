@@ -6,7 +6,7 @@
 type States = AwaitingUpgradeCommandStarted | AwaitingUpgradeCommandResult
 type UpgradeStateMachine() =
     inherit ModifierStateMachine<UpgradeStateMachineState>(
-        stateMachine<States> {
+        stateMachine<UpgradeStateMachineState,States> {
             events [
                 event<UpgradeExpired> {
                     correlatedBy (fun m -> m.Message.OrderId)
@@ -17,20 +17,20 @@ type UpgradeStateMachine() =
                 }
             ]
             initially [
-                on<Upgrade> {
-                    ofType<CopyInitialData> 
+                on<Upgrade> (eventActivity {
+                    bind Activity.OfType<CopyInitialData> 
                     ifElse instanceResultIsFailure
-                           activity { transition State.Final }
-                           activity { ofInstanceType<PublishUpgradeExpired>
-                                      ofType<PublishUpgradeOrderCreated>
-                                      transition (State.Of AwaitingUpgradeCommandStarted) }
-                }
+                           (eventActivity { transition State.Final })
+                           (eventActivity { bind Activity.OfInstanceType<PublishUpgradeExpired>
+                                            bind Activity.OfType<PublishUpgradeOrderCreated>
+                                            transition (State.Of AwaitingUpgradeCommandStarted) })
+                })
             ]
             during (State.Of AwaitingUpgradeCommandStarted) [
-                on<UpgradeCommandFinished> {
+                on<UpgradeCommandFinished> (eventActivity {
                     handle handleUpgradeCommandFinishedEvent
                     transition State.Final
-                }
+                })
             ]
             whenEnter State.Final [
                 activity {
