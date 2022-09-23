@@ -6,11 +6,12 @@ open Expecto
 
 type S = A = 0| B = 1
 type E() = 
-    member val CorrelationId = Guid.Empty with get,set
+    member val OrderId = Guid.Empty with get,set
 type TestSaga() =
     interface SagaStateMachineInstance
     interface ISaga with
         member val CorrelationId = Guid.Empty with get,set
+    member val CurrentState = "" with get,set
 
 type TestEventActivity() =
     interface IStateMachineActivity<TestSaga,E> with
@@ -38,6 +39,13 @@ type TestSagaActivity() =
 type TestMachine() =
     inherit ModifierStateMachine<TestSaga>(
         stateMachine<TestSaga, S> {
+            events [
+                event<E> {
+                    correlatedBy (fun x -> x.Message.OrderId)
+                    onMissing Event.Discard
+                }
+            ]
+            instanceState (fun s -> s.CurrentState)
             initially [
                 on<TestSaga,E> (eventActivity {
                     transition (State.Of S.A)
@@ -52,7 +60,9 @@ type TestMachine() =
             beforeEnter (State.Of S.B) [
                 stateActivity {
                     bind Activity.OfInstanceType<TestSagaActivity>
-                    conditionally (fun _ -> true) (stateActivity { bind Activity.OfType<TestStateActivity> })
+                    ifElse (fun _ -> true)
+                           (stateActivity { bind Activity.OfType<TestStateActivity> })
+                           (stateActivity { handle ignore })
                 }
             ]
             whenEnter (State.Of S.B) [
