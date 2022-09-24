@@ -12,9 +12,9 @@ type E2() =
 
 type TestSaga() =
     interface SagaStateMachineInstance
-        member val CorrelationId = Guid.Empty with get,set
     interface ISaga with
         member val CorrelationId = Guid.Empty with get,set
+    member val CorrelationId = Guid.Empty with get,set
     member val CurrentState = "" with get,set
 
 type TestEventActivity() =
@@ -49,7 +49,7 @@ type TestMachine() =
                 onMissing MissingInstance.Discard
             })
             event (correlated<E2> {
-                by (fun saga ctx -> ctx.Message.Id = (saga :> ISaga).CorrelationId)
+                by (fun saga ctx -> ctx.Message.Id = saga.CorrelationId)
                 onMissing (MissingInstance.Execute ignore)
             })
             initially [
@@ -62,13 +62,14 @@ type TestMachine() =
             ]
             during (State.Of S.A) [
                 onFiltered<TestSaga,E1> (fun _ ->true) (eventActivity { transition State.Final })
+                ignoreEvent<TestSaga,E2>
             ]
             beforeEnter (State.Of S.B) [
-                stateActivity {
+                transitionActivity {
                     bind Activity.OfInstanceType<TestSagaActivity>
                     ifElse (fun _ -> true)
-                           (stateActivity { bind Activity.OfType<TestStateActivity> })
-                           (stateActivity { handle ignore })
+                           (transitionActivity { bind Activity.OfType<TestStateActivity> })
+                           (transitionActivity { handle ignore })
                 }
             ]
             whenEnter (State.Of S.B) [
@@ -81,7 +82,7 @@ type TestMachine() =
                 }
             ]
             afterLeaveAny [
-                stateActivity { bind Activity.OfType<TestStateActivity> }
+                transitionActivity { bind Activity.OfType<TestStateActivity> }
             ]
         }
     )

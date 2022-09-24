@@ -220,7 +220,7 @@ type EventActivityBuilder<'saga, 'event
         state |> bind (fun (binder,_) -> binding binder |> ignore)
 
 
-type StateActivityBuilder<'saga 
+type TransitionActivityBuilder<'saga 
                     when 'saga: not struct
                     and 'saga :> ISaga
                     and 'saga :> SagaStateMachineInstance>
@@ -355,6 +355,14 @@ module Bindings =
             activity (builder:IStateMachineEventActivitiesBuilder<'saga>,smm:IStateMachineModifier<'saga>) =
         builder.When(Event<'event>.Of smm, tee (tuple smm >> activity)) |> ignore
     
+    let ignoreEvent<'saga,'event
+                when 'saga: not struct
+                and 'saga :> ISaga
+                and 'saga :> SagaStateMachineInstance
+                and 'event: not struct>
+            (builder:IStateMachineEventActivitiesBuilder<'saga>,smm:IStateMachineModifier<'saga>) =
+        builder.Ignore(Event<'event>.Of smm) |> ignore
+    
     let onFiltered<'saga,'event
                 when 'saga: not struct
                 and 'saga :> ISaga
@@ -363,11 +371,11 @@ module Bindings =
             filter activity (builder:IStateMachineEventActivitiesBuilder<'saga>,smm:IStateMachineModifier<'saga>) =
         builder.When(Event<'event>.Of smm, StateMachineCondition<'saga,'event> filter, tee (tuple smm >> activity)) |> ignore
         
-    let stateActivity<'saga
+    let transitionActivity<'saga
                 when 'saga: not struct
                 and 'saga :> ISaga
                 and 'saga :> SagaStateMachineInstance> =
-        StateActivityBuilder<'saga>(fun cfg args -> cfg args |> ignore)
+        TransitionActivityBuilder<'saga>(fun cfg args -> cfg args |> ignore)
     
     let activity<'saga
                 when 'saga: not struct
