@@ -15,18 +15,14 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="../../src/MassTransit.fs/MassTransit.fs.fsproj" />
-        <ProjectReference Include="../../../MassTransit/src/MassTransit/MassTransit.csproj" />
         <ProjectReference Include="../../../MassTransit/tests/MassTransit.Tests/MassTransit.Tests.csproj" />
-        <ProjectReference Include="../../../MassTransit/src/MassTransit.TestFramework/MassTransit.TestFramework.csproj" />
-        <ProjectReference Include="../../../MassTransit/src/Transports/MassTransit.Azure.ServiceBus.Core/MassTransit.Azure.ServiceBus.Core.csproj" />
-<!--        <ProjectReference Include="../../../MassTransit/src/MassTransit/MassTransit.csproj" />-->
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="Expecto" Version="9.0.2" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="5.0.0" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="5.0.0" />
         <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="5.0.0" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.8.3" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.2.0" />
         <PackageReference Include="Unquote" Version="5.0.0" />
         <PackageReference Include="YoloDev.Expecto.TestSdk" Version="0.11.1" />
         <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.9.0.0" />

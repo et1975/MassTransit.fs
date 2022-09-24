@@ -1,7 +1,6 @@
-﻿module MassTransit.fs.Tests.IntegrationTests
+﻿module MassTransit.fs.IntegrationTests
 
 open System
-open Azure.Identity
 open MassTransit.Testing
 open MassTransit
 open Microsoft.Extensions.DependencyInjection
@@ -23,10 +22,9 @@ let test =
         let sagaHarness = harness.GetSagaStateMachineHarness<TestMachine, TestSaga>()
         do! harness.Start()
         let sagaId = Guid.NewGuid()
-        let message = E()
-        message.OrderId <- sagaId
+        let message = E1(OrderId = sagaId)
         do! harness.Bus.Publish(message)
-        let! consumed = harness.Consumed.Any<E>()
+        let! consumed = harness.Consumed.Any<E1>()
         Expect.isTrue consumed "harness should have consumed message"
         let sagaHarness = harness.GetSagaStateMachineHarness<TestMachine, TestSaga>()
         let expectedState =

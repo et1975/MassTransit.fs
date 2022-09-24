@@ -7,15 +7,14 @@ type States = AwaitingUpgradeCommandStarted | AwaitingUpgradeCommandResult
 type UpgradeStateMachine() =
     inherit ModifierStateMachine<UpgradeStateMachineState>(
         stateMachine<UpgradeStateMachineState,States> {
-            events [
-                event<UpgradeExpired> {
-                    correlatedBy (fun m -> m.Message.OrderId)
-                }
-                event<UpgradeCommandStarted> {
-                    correlatedBy (fun m -> m.Message.OrderId)
-                    onMissing Event.discard
-                }
-            ]
+            event (correlated<UpgradeExpired> {
+                byId (fun m -> m.Message.OrderId)
+            })
+            event (correlated<UpgradeCommandStarted> {
+                by (fun saga ctx -> ctx.Message.Id = saga.CorrelationId)
+                onMissing Event.discard
+            })
+
             initially [
                 on<Upgrade> (eventActivity {
                     bind Activity.OfType<CopyInitialData> 

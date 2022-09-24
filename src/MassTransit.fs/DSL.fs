@@ -10,10 +10,17 @@ type MTEvent = MassTransit.Event
 type MTEvent<'e when 'e : not struct> = MassTransit.Event<'e>
 
 [<RequireQualifiedAccess>]
-type Event<'event when 'event : not struct> =
-    static member Discard (cfg:IMissingInstanceConfigurator<'saga,'event>) = cfg.Discard()
-    static member Execute (callback) (cfg:IMissingInstanceConfigurator<'saga,'event>) = cfg.Execute(Action<ConsumeContext<'event>> callback)
-    static member ExecuteAsync (callback) (cfg:IMissingInstanceConfigurator<'saga,'event>) = cfg.ExecuteAsync(Func<ConsumeContext<'event>,Task> callback)
+type MissingInstance<'event when 'event : not struct> =
+    static member Discard (cfg:IMissingInstanceConfigurator<'saga,'event>) =
+        cfg.Discard()
+    static member Fault (cfg:IMissingInstanceConfigurator<'saga,'event>) =
+        cfg.Fault()
+    static member Redeliver callback (cfg:IMissingInstanceConfigurator<'saga,'event>) =
+        cfg.Redeliver(Action<IMissingInstanceRedeliveryConfigurator<'saga,'event>> callback)
+    static member Execute callback (cfg:IMissingInstanceConfigurator<'saga,'event>) =
+        cfg.Execute(Action<ConsumeContext<'event>> callback)
+    static member ExecuteAsync callback (cfg:IMissingInstanceConfigurator<'saga,'event>) =
+        cfg.ExecuteAsync(Func<ConsumeContext<'event>,Task> callback)
 
 [<RequireQualifiedAccess>]
 type State = 
@@ -111,19 +118,21 @@ module private Adapters =
             smm.BeforeEnterAny(tee (fun binder -> for a in activities do a (binder,smm))) |> ignore
 
 
-type EventBuilder<'event when 'event : not struct>() = 
-    member _.Yield _ = fun (_:IStateMachineModifier<'saga>) -> ()
-    [<CustomOperation "correlatedBy">]
-    member _.CorrelatedBy(state, conf) =
-        tee state
-        >> Event<'event>.Configure (fun x -> x.CorrelateById (Func<ConsumeContext<'event>,Guid> conf) |> ignore)
-        >> ignore
+type EventCorrelationBuilder<'event when 'event : not struct>() = 
+    member _.Zero _ = fun (x:IEventCorrelationConfigurator<'saga,'event>) -> ()
+    member _.Yield _ = fun (x:IEventCorrelationConfigurator<'saga,'event>) -> ()
+    
+    [<CustomOperation "by">]
+    member _.By(state, correlationExpression) =
+        fun (x:IEventCorrelationConfigurator<'saga,'event>) -> x.CorrelateBy correlationExpression |> state
+
+    [<CustomOperation "byId">]
+    member _.ById(state, conf) =
+        fun (x:IEventCorrelationConfigurator<'saga,'event>) -> x.CorrelateById (Func<ConsumeContext<'event>,Guid> conf) |> state
     
     [<CustomOperation "onMissing">]
     member _.OnMissing(state, conf) =
-        tee state 
-        >> Event<'event>.Configure (fun x -> x.OnMissingInstance(Func<IMissingInstanceConfigurator<'b,'event>,IPipe<ConsumeContext<'event>>> conf) |> ignore) 
-        >> ignore
+        fun (x:IEventCorrelationConfigurator<'saga,'event>) -> x.OnMissingInstance(Func<IMissingInstanceConfigurator<'saga,'event>,IPipe<ConsumeContext<'event>>> conf) |> state
 
 
 type ActivityBuilder<'saga
@@ -137,7 +146,7 @@ type ActivityBuilder<'saga
              (state: EventActivityBinder<'saga> * IStateMachineModifier<'saga> -> unit) =
         tee state >> apply cfg
 
-    member _.Yield _ = ignore
+    member _.Yield _ = fun (_:EventActivityBinder<'saga>,_:IStateMachineModifier<'saga>) -> ()
     
     [<CustomOperation "conditionally">]
     member _.If(state,cond,onTrue) =
@@ -180,7 +189,7 @@ type EventActivityBuilder<'saga, 'event
              (state: EventActivityBinder<'saga,'event> * IStateMachineModifier<'saga> -> unit) =
         tee state >> apply cfg
 
-    member _.Yield _ = ignore
+    member _.Yield _ = fun (_:EventActivityBinder<'saga,'event>,_:IStateMachineModifier<'saga>)-> ()
     
     [<CustomOperation "conditionally">]
     member _.If(state, cond, onTrue) =
@@ -222,7 +231,7 @@ type StateActivityBuilder<'saga
              (state: EventActivityBinder<'saga,MTState> * IStateMachineModifier<'saga> -> unit) =
         tee state >> apply cfg
 
-    member _.Yield _ = ignore
+    member _.Yield _ = fun (_:EventActivityBinder<'saga,MTState>,_:IStateMachineModifier<'saga>)-> ()
 
     [<CustomOperation "conditionally">]
     member _.If(state,cond,onTrue) =
@@ -255,19 +264,14 @@ type StateMachineBuilder<'saga, 'enum
                 and 'enum :> Enum and 'enum: struct and 'enum: (new: unit -> 'enum)>() = 
     member _.Yield _ = [State<'enum>.Declare]
         
-    [<CustomOperation "events">]
-    member _.Events(state: list<IStateMachineModifier<'saga> -> unit>, events: list<IStateMachineModifier<'saga> -> unit>) =
-        state @ events
+    [<CustomOperation "event">]
+    member _.Event(state: list<IStateMachineModifier<'saga> -> unit>, event: IEventCorrelationConfigurator<'saga,'event> -> unit) =
+        [Event<'event>.Configure event] @ state
     
     [<CustomOperation "instanceState">]
     member _.InstanceState(state: list<IStateMachineModifier<'saga> -> unit>,
                            property:Linq.Expressions.Expression<Func<'saga,string>>) =
-        (fun (smm:IStateMachineModifier<'saga>) -> smm.InstanceState property |> ignore) :: state
-
-    [<CustomOperation "instanceState">]
-    member _.InstanceState(state: list<IStateMachineModifier<'saga> -> unit>,
-                           property:Linq.Expressions.Expression<Func<'saga,MTState>>) =
-        (fun (smm:IStateMachineModifier<'saga>) -> smm.InstanceState property |> ignore) :: state
+        [fun (smm:IStateMachineModifier<'saga>) -> smm.InstanceState property |> ignore] @ state
     
     [<CustomOperation "initially">]
     member _.Initially(state: list<IStateMachineModifier<'saga> -> unit>, 
@@ -340,7 +344,8 @@ module Bindings =
     let stateMachine<'saga, 'enum
                 when 'saga :> SagaStateMachineInstance
                 and 'saga : not struct 
-                and 'enum :> Enum and 'enum: struct and 'enum: (new: unit -> 'enum)> = StateMachineBuilder<'saga, 'enum>()
+                and 'enum :> Enum and 'enum: struct and 'enum: (new: unit -> 'enum)> = 
+        StateMachineBuilder<'saga, 'enum>()
     
     let on<'saga,'event
                 when 'saga: not struct
@@ -377,4 +382,4 @@ module Bindings =
                 and 'event: not struct> =
         EventActivityBuilder<'saga, 'event>(fun cfg args -> cfg args |> ignore)
 
-    let event<'event when 'event : not struct> = EventBuilder<'event>()
+    let correlated<'event when 'event : not struct> = EventCorrelationBuilder<'event>()

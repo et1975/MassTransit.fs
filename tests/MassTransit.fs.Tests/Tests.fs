@@ -5,8 +5,11 @@ open MassTransit
 open Expecto
 
 type S = A = 0| B = 1
-type E() = 
+type E1() = 
     member val OrderId = Guid.Empty with get,set
+type E2() = 
+    member val Id = Guid.Empty with get,set
+
 type TestSaga() =
     interface SagaStateMachineInstance
         member val CorrelationId = Guid.Empty with get,set
@@ -15,10 +18,10 @@ type TestSaga() =
     member val CurrentState = "" with get,set
 
 type TestEventActivity() =
-    interface IStateMachineActivity<TestSaga,E> with
+    interface IStateMachineActivity<TestSaga,E1> with
         member this.Accept(visitor) = visitor.Visit(this) 
-        member this.Execute(ctx: BehaviorContext<TestSaga, E>, next: IBehavior<TestSaga, E>) = next.Execute ctx
-        member this.Faulted<'exn when 'exn :> exn>(context: BehaviorExceptionContext<TestSaga,E, 'exn>, next: IBehavior<TestSaga, E>) = next.Faulted(context)
+        member this.Execute(ctx: BehaviorContext<TestSaga, E1>, next: IBehavior<TestSaga, E1>) = next.Execute ctx
+        member this.Faulted<'exn when 'exn :> exn>(context: BehaviorExceptionContext<TestSaga, E1, 'exn>, next: IBehavior<TestSaga, E1>) = next.Faulted(context)
         member this.Probe(context:ProbeContext) = context.CreateScope(this.GetType().Name) |> ignore<ProbeContext>
 
 type TestStateActivity() =
@@ -40,15 +43,17 @@ type TestSagaActivity() =
 type TestMachine() =
     inherit ModifierStateMachine<TestSaga>(
         stateMachine<TestSaga, S> {
-            events [
-                event<E> {
-                    correlatedBy (fun x -> x.Message.OrderId)
-//                    onMissing Event.Discard
-                }
-            ]
             instanceState (fun s -> s.CurrentState)
+            event (correlated<E1> {
+                byId (fun x -> x.Message.OrderId)
+                onMissing MissingInstance.Discard
+            })
+            event (correlated<E2> {
+                by (fun saga ctx -> ctx.Message.Id = (saga :> ISaga).CorrelationId)
+                onMissing (MissingInstance.Execute ignore)
+            })
             initially [
-                on<TestSaga,E> (eventActivity {
+                on<TestSaga,E1> (eventActivity {
                     transition (State.Of S.A)
                     bind Activity.OfType<TestEventActivity>
                     bind Activity.OfInstanceType<TestSagaActivity>
@@ -56,7 +61,7 @@ type TestMachine() =
                 })
             ]
             during (State.Of S.A) [
-                onFiltered<TestSaga,E> (fun _ ->true) (eventActivity { transition State.Final })
+                onFiltered<TestSaga,E1> (fun _ ->true) (eventActivity { transition State.Final })
             ]
             beforeEnter (State.Of S.B) [
                 stateActivity {
