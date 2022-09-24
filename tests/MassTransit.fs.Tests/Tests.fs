@@ -9,6 +9,7 @@ type E() =
     member val OrderId = Guid.Empty with get,set
 type TestSaga() =
     interface SagaStateMachineInstance
+        member val CorrelationId = Guid.Empty with get,set
     interface ISaga with
         member val CorrelationId = Guid.Empty with get,set
     member val CurrentState = "" with get,set
@@ -42,7 +43,7 @@ type TestMachine() =
             events [
                 event<E> {
                     correlatedBy (fun x -> x.Message.OrderId)
-                    onMissing Event.Discard
+//                    onMissing Event.Discard
                 }
             ]
             instanceState (fun s -> s.CurrentState)
