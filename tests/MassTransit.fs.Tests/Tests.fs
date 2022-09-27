@@ -15,7 +15,7 @@ type TestSaga() =
     interface ISaga with
         member val CorrelationId = Guid.Empty with get,set
     member val CorrelationId = Guid.Empty with get,set
-    member val CurrentState = "" with get,set
+    member val CurrentState = unbox<State> null with get,set
 
 type TestEventActivity() =
     interface IStateMachineActivity<TestSaga,E1> with
@@ -43,7 +43,6 @@ type TestSagaActivity() =
 type TestMachine() =
     inherit ModifierStateMachine<TestSaga>(
         stateMachine<TestSaga, S> {
-            instanceState (fun s -> s.CurrentState)
             event (correlated<E1> {
                 byId (fun x -> x.Message.OrderId)
                 onMissing MissingInstance.Discard
@@ -52,6 +51,7 @@ type TestMachine() =
                 by (fun saga ctx -> ctx.Message.Id = saga.CorrelationId)
                 onMissing (MissingInstance.Execute ignore)
             })
+            instanceState (fun s -> s.CurrentState)
             initially [
                 on<TestSaga,E1> (eventActivity {
                     transition (State.Of S.A)

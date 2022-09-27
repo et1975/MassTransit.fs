@@ -22,6 +22,6 @@
     <Compile Include="ModifierStateMachine.fs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../../../MassTransit/src/MassTransit/MassTransit.csproj" />
+    <PackageReference Include="MassTransit" Version="8.0.7-develop.595" />
   </ItemGroup>
 </Project>

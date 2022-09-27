@@ -15,9 +15,9 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="../../src/MassTransit.fs/MassTransit.fs.fsproj" />
-        <ProjectReference Include="../../../MassTransit/tests/MassTransit.Tests/MassTransit.Tests.csproj" />
     </ItemGroup>
     <ItemGroup>
+        <PackageReference Include="MassTransit.TestFramework" Version="8.0.7-develop.595" />
         <PackageReference Include="Expecto" Version="9.0.2" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="5.0.0" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="5.0.0" />

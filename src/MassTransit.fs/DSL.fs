@@ -272,6 +272,16 @@ type StateMachineBuilder<'saga, 'enum
     member _.InstanceState(state: list<IStateMachineModifier<'saga> -> unit>,
                            property:Linq.Expressions.Expression<Func<'saga,string>>) =
         [fun (smm:IStateMachineModifier<'saga>) -> smm.InstanceState property |> ignore] @ state
+
+    [<CustomOperation "instanceState">]
+    member _.InstanceState(state: list<IStateMachineModifier<'saga> -> unit>,
+                           property:Linq.Expressions.Expression<Func<'saga,int>>) =
+        [fun (smm:IStateMachineModifier<'saga>) -> smm.InstanceState property |> ignore] @ state
+
+    [<CustomOperation "instanceState">]
+    member _.InstanceState(state: list<IStateMachineModifier<'saga> -> unit>,
+                           property:Linq.Expressions.Expression<Func<'saga,MTState>>) =
+        [fun (smm:IStateMachineModifier<'saga>) -> smm.InstanceState property |> ignore] @ state
     
     [<CustomOperation "initially">]
     member _.Initially(state: list<IStateMachineModifier<'saga> -> unit>, 
