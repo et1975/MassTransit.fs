@@ -1,14 +1,17 @@
-name: CI
+name: Release
 
 on:
-  pull_request:
+  push:
     branches: [ master ]
 
 jobs:
   build:
 
     runs-on: ubuntu-latest
-
+    env:
+      BUILD_NUMBER: ${{ github.run_number }}
+      NUGET_REPO_URL: nuget.org
+      NUGET_REPO_KEY: ${{ secrets.NUGET_KEY }}
     steps:
     - uses: actions/checkout@v2
     - name: Setup .NET
@@ -18,4 +21,4 @@ jobs:
     - name: Restore tools
       run: dotnet tool restore
     - name: Build
-      run: dotnet fsi build.fsx
+      run: dotnet fsi build.fsx -t release

@@ -67,7 +67,7 @@ Target.create "publish" (fun _ ->
     let exec dir =
         DotNet.exec (fun a -> a.WithCommon (fun c -> { c with WorkingDirectory=dir }))
     let args = sprintf "push %s.%s.nupkg -s %s -k %s"
-                       "MassTransit.fs" ver.AsString
+                       "MassTransitFs" ver.AsString
                        (Environment.environVar "NUGET_REPO_URL")
                        (Environment.environVar "NUGET_REPO_KEY")
     let result = exec ("src/MassTransit.fs/bin/Release") "nuget" args
@@ -79,6 +79,7 @@ Target.create "meta" (fun _ ->
       "<PropertyGroup>"
       "<Copyright>MassTransit.fs contributors. All rights reserved.</Copyright>"
       "<Authors>Eugene Tolmachev</Authors>"
+      "<PackageId>MassTransitFs</PackageId>"
       sprintf "<PackageProjectUrl>%s</PackageProjectUrl>" gitIO
       sprintf "<RepositoryUrl>%s/%s</RepositoryUrl>" gitHome gitName
       "<PackageLicense>MIT</PackageLicense>"
