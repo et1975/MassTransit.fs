@@ -84,7 +84,7 @@ Target.create "meta" (fun _ ->
       sprintf "<RepositoryUrl>%s/%s</RepositoryUrl>" gitHome gitName
       "<PackageLicense>MIT</PackageLicense>"
       sprintf "<PackageReleaseNotes>%s</PackageReleaseNotes>" (List.head release.Notes)
-      sprintf "<PackageIconUrl>%s/master/docs/content/logo.png</PackageIconUrl>" gitContent
+      sprintf "<PackageIconUrl>%s/master/docs/img/logo.png</PackageIconUrl>" gitContent
       "<PackageTags>MassTransit;fsharp</PackageTags>"
       sprintf "<Version>%s</Version>" (string ver)
       sprintf "<FsDocsLogoSource>%s/master/docs/img/logo.png</FsDocsLogoSource>" gitContent
