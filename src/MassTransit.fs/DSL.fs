@@ -28,7 +28,7 @@ type State =
         fun (smm: IStateMachineModifier<'saga>) ->
             let mutable state: MTState<'saga> = null
             smm.State(string e, &state) |> ignore
-            state
+            state :> MTState
 
     static member Final (smm: IStateMachineModifier<'saga>) = smm.Final
     static member Initial (smm: IStateMachineModifier<'saga>) = smm.Initial
@@ -79,7 +79,7 @@ module private Adapters =
 
         static member Initially (smm: IStateMachineModifier<'saga>) = smm.Initially(), smm
 
-        static member During (mkState: _ -> MTState<'saga>) (smm: IStateMachineModifier<'saga>) = smm.During(mkState smm), smm
+        static member During (mkState: _ -> MTState) (smm: IStateMachineModifier<'saga>) = smm.During(mkState smm), smm
 
         static member DuringAny (smm: IStateMachineModifier<'saga>) = smm.DuringAny(), smm
 
@@ -300,13 +300,13 @@ type StateMachineBuilder<'saga, 'enum
     
     [<CustomOperation "during">]
     member _.During(state: list<IStateMachineModifier<'saga> -> unit>,
-                    mkState: IStateMachineModifier<'saga> -> MTState<'saga>,
+                    mkState: IStateMachineModifier<'saga> -> MTState,
                     activities: list<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) =
         [State<'enum>.During mkState >> Activity.BuildAll activities] @ state
 
     [<CustomOperation "whenEnter">]
     member _.WhenEnter(state: list<IStateMachineModifier<'saga> -> unit>,
-                       mkState: IStateMachineModifier<'saga> -> MTState<'saga>,
+                       mkState: IStateMachineModifier<'saga> -> MTState,
                        activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) =
         [State<'enum>.Tuple mkState >> Activity.WhenEnter activities] @ state
 
@@ -317,7 +317,7 @@ type StateMachineBuilder<'saga, 'enum
 
     [<CustomOperation "whenLeave">]
     member _.WhenLeave(state: list<IStateMachineModifier<'saga> -> unit>,
-                       mkState: IStateMachineModifier<'saga> -> MTState<'saga>,
+                       mkState: IStateMachineModifier<'saga> -> MTState,
                        activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) =
         [State<'enum>.Tuple mkState >> Activity.WhenLeave activities] @ state
 
@@ -328,7 +328,7 @@ type StateMachineBuilder<'saga, 'enum
 
     [<CustomOperation "afterLeave">]
     member _.WhenLeave(state: list<IStateMachineModifier<'saga> -> unit>,
-                       mkState: IStateMachineModifier<'saga> -> MTState<'saga>,
+                       mkState: IStateMachineModifier<'saga> -> MTState,
                        activities: list<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> unit>) =
         [State<'enum>.Tuple mkState >> Activity.AfterLeave activities] @ state
 
@@ -339,7 +339,7 @@ type StateMachineBuilder<'saga, 'enum
 
     [<CustomOperation "beforeEnter">]
     member _.BeforeEnter(state: list<IStateMachineModifier<'saga> -> unit>,
-                         mkState: IStateMachineModifier<'saga> -> MTState<'saga>,
+                         mkState: IStateMachineModifier<'saga> -> MTState,
                          activities: list<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> unit>) =
         [State<'enum>.Tuple mkState >> Activity.BeforeEnter activities] @ state
 
