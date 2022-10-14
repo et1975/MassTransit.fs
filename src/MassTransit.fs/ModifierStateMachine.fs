@@ -12,8 +12,8 @@ module internal StateMachineModifier =
 
 [<AbstractClass>]
 type ModifierStateMachine<'saga when 'saga : not struct and 'saga :> SagaStateMachineInstance>(
-    modifiers: seq<IStateMachineModifier<'saga> -> unit>) as this =
+    modifier: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>) as this =
     inherit MassTransitStateMachine<'saga>()
     do
       let m = StateMachineModifier.mkNew this
-      for f in modifiers do f m
+      modifier m |> ignore
