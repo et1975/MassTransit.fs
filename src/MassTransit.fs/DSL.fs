@@ -61,63 +61,62 @@ type Activity<'saga,'event
 module private Adapters =
     [<RequireQualifiedAccess>]
     type Event<'event when 'event : not struct> =
-        static member Of (smm: IStateMachineModifier<'saga>) = 
-            let mutable event: MTEvent<'event> = null
-            smm.Event(typeof<'event>.Name, &event) |> ignore
-            event
-        static member Configure cfg (smm: IStateMachineModifier<'saga>) = 
+        static member Configure cfg cacheEvent (smm: IStateMachineModifier<'saga>) = 
             let mutable event: MTEvent<'event> = null
             smm.Event(typeof<'event>.Name, Action<IEventCorrelationConfigurator<'saga,'event>> cfg, &event)
-            |> (fun smm -> printfn $"{event.Name}"; smm)
-
+            |> fun smm -> cacheEvent(event.Name, event); smm
 
     [<RequireQualifiedAccess>]
     type State<'enum when 'enum :> Enum and 'enum: struct and 'enum: (new: unit -> 'enum)> =
         static member Declare (smm: IStateMachineModifier<'saga>) = 
-            (smm, Enum.GetValues<'enum>()) ||> Seq.fold (fun m e ->
+            for e in Enum.GetValues<'enum>() do
                 let mutable state: MTState<'saga> = null
-                m.State(string e, &state))
-
-        static member Initially (smm: IStateMachineModifier<'saga>) = smm.Initially(), smm
-
-        static member During (mkState: _ -> MTState) (smm: IStateMachineModifier<'saga>) = smm.During(mkState smm), smm
-
-        static member DuringAny (smm: IStateMachineModifier<'saga>) = smm.DuringAny(), smm
+                smm.State(string e, &state) |> ignore
+            smm
 
         static member Tuple  (mkState: _ -> #MTState) (smm: IStateMachineModifier<'saga>) = mkState smm, smm
 
+        static member Initially (smm: IStateMachineModifier<'saga>) = smm.Initially()
+
+        static member During (mkState: _ -> MTState) (smm: IStateMachineModifier<'saga>) = smm.During(mkState smm)
+
+        static member DuringAny (smm: IStateMachineModifier<'saga>) = smm.DuringAny()
+
+    let private bindActivities smm activities binder = (binder,activities) ||> Seq.fold (fun binder a -> a (binder,smm))
+    
     [<RequireQualifiedAccess>]
     type Activity =
-        static member BuildAll (activities:#seq<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) (state, smm:IStateMachineModifier<'saga>) =
-            for a in activities do a (state,smm)
-            smm
 
-        static member WhenEnter (activities:#seq<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) (state, smm:IStateMachineModifier<'saga>) =
-            smm.WhenEnter(state, tee (fun binder -> for a in activities do a (binder,smm)))
+        static member BuildAll (activities:#seq<(string->MTEvent)*IStateMachineEventActivitiesBuilder<'saga> -> unit>) getEvent builder =
+            for a in activities do a (getEvent,builder)
+            builder :> IStateMachineModifier<'saga>
+
+        static member WhenEnter (activities:#seq<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga>>) (state, smm:IStateMachineModifier<'saga>) =
+            smm.WhenEnter(state, bindActivities smm activities)
         
-        static member WhenEnterAny (activities:#seq<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) (smm:IStateMachineModifier<'saga>) =
-            smm.WhenEnterAny(tee (fun binder -> for a in activities do a (binder,smm)))
+        static member WhenEnterAny (activities:#seq<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga>>) (smm:IStateMachineModifier<'saga>) =
+            smm.WhenEnterAny(bindActivities smm activities)
         
-        static member WhenLeave (activities:#seq<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) (state, smm:IStateMachineModifier<'saga>) =
-            smm.WhenLeave(state, tee (fun binder -> for a in activities do a (binder,smm)))
+        static member WhenLeave (activities:#seq<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga>>) (state, smm:IStateMachineModifier<'saga>) =
+            smm.WhenLeave(state, bindActivities smm activities)
         
-        static member WhenLeaveAny (activities:#seq<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) (smm:IStateMachineModifier<'saga>) =
-            smm.WhenLeaveAny(tee (fun binder -> for a in activities do a (binder,smm)))
+        static member WhenLeaveAny (activities:#seq<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga>>) (smm:IStateMachineModifier<'saga>) =
+            smm.WhenLeaveAny(bindActivities smm activities)
         
-        static member Finally (activities:#seq<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) (smm:IStateMachineModifier<'saga>) =
-            smm.Finally(tee (fun binder -> for a in activities do a (binder,smm)))
+        static member Finally (activities:#seq<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga>>) (smm:IStateMachineModifier<'saga>) =
+            smm.Finally(bindActivities smm activities)
         
-        static member AfterLeave (activities:#seq<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> unit>) (state, smm:IStateMachineModifier<'saga>) =
-            smm.AfterLeave(state, tee (fun binder -> for a in activities do a (binder,smm)))
+        static member AfterLeave (activities:#seq<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga,MTState>>) (state, smm:IStateMachineModifier<'saga>) =
+            smm.AfterLeave(state, bindActivities smm activities)
         
-        static member AfterLeaveAny (activities:#seq<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> unit>) (smm:IStateMachineModifier<'saga>) =
-            smm.AfterLeaveAny(tee (fun binder -> for a in activities do a (binder,smm)))
+        static member AfterLeaveAny (activities:#seq<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga,MTState>>) (smm:IStateMachineModifier<'saga>) =
+            smm.AfterLeaveAny(bindActivities smm activities)
         
-        static member BeforeEnter (activities:#seq<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> unit>) (state, smm:IStateMachineModifier<'saga>) =
-            smm.BeforeEnter(state, tee (fun binder -> for a in activities do a (binder,smm)))
+        static member BeforeEnter (activities:#seq<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga,MTState>>) (state, smm:IStateMachineModifier<'saga>) =
+            smm.BeforeEnter(state, bindActivities smm activities)
         
-        static member BeforeEnterAny (activities:#seq<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> unit>) (smm:IStateMachineModifier<'saga>) =
-            smm.BeforeEnterAny(tee (fun binder -> for a in activities do a (binder,smm)))
+        static member BeforeEnterAny (activities:#seq<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga,MTState>>) (smm:IStateMachineModifier<'saga>) =
+            smm.BeforeEnterAny(bindActivities smm activities)
 
 
 type EventCorrelationBuilder<'event when 'event : not struct>() = 
@@ -140,138 +139,127 @@ type EventCorrelationBuilder<'event when 'event : not struct>() =
 type ActivityBuilder<'saga
                     when 'saga: not struct
                     and 'saga :> ISaga
-                    and 'saga :> SagaStateMachineInstance>
-        (apply: (EventActivityBinder<'saga> * IStateMachineModifier<'saga> -> unit) ->
-                EventActivityBinder<'saga> * IStateMachineModifier<'saga> -> 
-                unit) =
-    let bind (cfg: EventActivityBinder<'saga> * IStateMachineModifier<'saga> -> unit) 
-             (state: EventActivityBinder<'saga> * IStateMachineModifier<'saga> -> unit) =
-        tee state >> apply cfg
+                    and 'saga :> SagaStateMachineInstance>() =
+    let bind (cfg: EventActivityBinder<'saga> * IStateMachineModifier<'saga> -> EventActivityBinder<'saga>) 
+             (state: EventActivityBinder<'saga> * IStateMachineModifier<'saga> -> EventActivityBinder<'saga>) =
+        fun (binder,smm) -> state (binder,smm) |> fun binder -> cfg (binder,smm)
 
-    member _.Yield _ = fun (_:EventActivityBinder<'saga>,_:IStateMachineModifier<'saga>) -> ()
+    member _.Yield _ = fun (binder:EventActivityBinder<'saga>,_:IStateMachineModifier<'saga>) -> binder
     
     [<CustomOperation "conditionally">]
     member _.If(state,cond,onTrue) =
-        state |> bind (fun (binder,smm) -> binder.If(cond, tee (tuple smm >> onTrue)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.If(cond, tuple smm >> onTrue))
 
     [<CustomOperation "conditionally">]
     member _.If(state,cond,onTrue) =
-        state |> bind (fun (binder,smm) -> binder.IfAsync(cond, tee (tuple smm >> onTrue)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.IfAsync(cond, tuple smm >> onTrue))
 
     [<CustomOperation "ifElse">]
     member _.IfElse(state,cond,onTrue,onFalse) =
-        state |> bind (fun (binder,smm) -> binder.IfElse(cond, tee (tuple smm >> onTrue), tee (tuple smm >> onFalse)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.IfElse(cond, tuple smm >> onTrue, tuple smm >> onFalse))
 
     [<CustomOperation "ifElse">]
     member _.IfElse(state,cond,onTrue,onFalse) =
-        state |> bind (fun (binder,smm) -> binder.IfElseAsync(cond, tee (tuple smm >> onTrue), tee (tuple smm >> onFalse)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.IfElseAsync(cond, tuple smm >> onTrue, tuple smm >> onFalse))
 
     [<CustomOperation "transition">]
     member _.Transition(state, mkState) =
-        state |> bind (fun (binder,smm) -> binder.TransitionTo(mkState smm) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.TransitionTo(mkState smm))
 
     [<CustomOperation "handle">]
     member _.Handle(state, handler) =
-        state |> bind (fun (binder,smm) -> binder.Then(handler) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.Then(handler))
 
     [<CustomOperation "bind">]
     member _.Bind(state,binding) =
-        state |> bind (fun (binder,_) -> binding binder |> ignore)
+        state |> bind (fun (binder,_) -> binding binder)
 
 
 type EventActivityBuilder<'saga, 'event
                     when 'saga: not struct
                     and 'saga :> ISaga
                     and 'saga :> SagaStateMachineInstance
-                    and 'event: not struct>
-        (apply: (EventActivityBinder<'saga,'event> * IStateMachineModifier<'saga> -> unit) ->
-                EventActivityBinder<'saga,'event> * IStateMachineModifier<'saga> -> 
-                unit) =
-    let bind (cfg: EventActivityBinder<'saga,'event> * IStateMachineModifier<'saga> -> unit) 
-             (state: EventActivityBinder<'saga,'event> * IStateMachineModifier<'saga> -> unit) =
-        tee state >> apply cfg
+                    and 'event: not struct> () =
+    let bind (cfg: EventActivityBinder<'saga,'event> * IStateMachineModifier<'saga> -> EventActivityBinder<'saga,'event>) 
+             (state: EventActivityBinder<'saga,'event> * IStateMachineModifier<'saga> -> EventActivityBinder<'saga,'event>) =
+        fun (binder,smm) -> state (binder,smm) |> fun binder -> cfg (binder,smm)
 
-    member _.Yield _ = fun (_:EventActivityBinder<'saga,'event>,_:IStateMachineModifier<'saga>)-> ()
+    member _.Yield _ = fun (binder:EventActivityBinder<'saga,'event>,_:IStateMachineModifier<'saga>) -> binder
     
     [<CustomOperation "conditionally">]
     member _.If(state, cond, onTrue) =
-        state |> bind (fun (binder,smm) -> binder.If(StateMachineCondition<'saga,'event> cond, tee (tuple smm >> onTrue)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.If(StateMachineCondition<'saga,'event> cond, tuple smm >> onTrue))
 
     [<CustomOperation "conditionally">]
     member _.If(state,cond,onTrue) =
-        state |> bind (fun (binder,smm) -> binder.IfAsync(StateMachineAsyncCondition<'saga,'event> cond, tee (tuple smm >> onTrue)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.IfAsync(StateMachineAsyncCondition<'saga,'event> cond, tuple smm >> onTrue))
 
     [<CustomOperation "ifElse">]
     member _.IfElse(state,cond,onTrue,onFalse) =
-        state |> bind (fun (binder,smm) -> binder.IfElse(StateMachineCondition<'saga,'event> cond, tee (tuple smm >> onTrue), tee (tuple smm >> onFalse)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.IfElse(StateMachineCondition<'saga,'event> cond, tuple smm >> onTrue, tuple smm >> onFalse))
 
     [<CustomOperation "ifElse">]
     member _.IfElse(state,cond,onTrue,onFalse) =
-        state |> bind (fun (binder,smm) -> binder.IfElseAsync(StateMachineAsyncCondition<'saga,'event> cond, tee (tuple smm >> onTrue), tee (tuple smm >> onFalse)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.IfElseAsync(StateMachineAsyncCondition<'saga,'event> cond, tuple smm >> onTrue, tuple smm >> onFalse))
 
     [<CustomOperation "transition">]
     member _.Transition(state, mkState) =
-        state |> bind (fun (binder,smm) -> binder.TransitionTo(mkState smm) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.TransitionTo(mkState smm))
 
     [<CustomOperation "handle">]
     member _.Handle(state, handler) =
-        state |> bind (fun (binder,smm) -> binder.Then(handler) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.Then(Action<BehaviorContext<'saga,'event>> handler))
 
     [<CustomOperation "bind">]
     member _.Bind(state,binding) =
-        state |> bind (fun (binder,_) -> binding binder |> ignore)
+        state |> bind (fun (binder,_) -> binding binder)
 
 
 type TransitionActivityBuilder<'saga 
                     when 'saga: not struct
                     and 'saga :> ISaga
-                    and 'saga :> SagaStateMachineInstance>
-        (apply: (EventActivityBinder<'saga,MTState> * IStateMachineModifier<'saga> -> unit) ->
-                EventActivityBinder<'saga,MTState> * IStateMachineModifier<'saga> -> 
-                unit) =
-    let bind (cfg: EventActivityBinder<'saga,MTState> * IStateMachineModifier<'saga> -> unit) 
-             (state: EventActivityBinder<'saga,MTState> * IStateMachineModifier<'saga> -> unit) =
-        tee state >> apply cfg
+                    and 'saga :> SagaStateMachineInstance>() =
+    let bind (cfg: EventActivityBinder<'saga,MTState> * IStateMachineModifier<'saga> -> EventActivityBinder<'saga,MTState>) 
+             (state: EventActivityBinder<'saga,MTState> * IStateMachineModifier<'saga> -> EventActivityBinder<'saga,MTState>) =
+       fun (binder,smm) -> state (binder,smm) |> fun binder -> cfg (binder,smm)
 
-    member _.Yield _ = fun (_:EventActivityBinder<'saga,MTState>,_:IStateMachineModifier<'saga>)-> ()
+    member _.Yield _ = fun (binder:EventActivityBinder<'saga,MTState>,_:IStateMachineModifier<'saga>) -> binder
 
     [<CustomOperation "conditionally">]
     member _.If(state,cond,onTrue) =
-        state |> bind (fun (binder,smm) -> binder.If(StateMachineCondition<'saga,MTState> cond, tee (tuple smm >> onTrue)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.If(StateMachineCondition<'saga,MTState> cond, tuple smm >> onTrue))
 
     [<CustomOperation "conditionally">]
     member _.If(state,cond,onTrue) =
-        state |> bind (fun (binder,smm) -> binder.IfAsync(StateMachineAsyncCondition<'saga,MTState> cond, tee (tuple smm >> onTrue)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.IfAsync(StateMachineAsyncCondition<'saga,MTState> cond, tuple smm >> onTrue))
 
     [<CustomOperation "ifElse">]
     member _.IfElse(state,cond,onTrue,onFalse) =
-        state |> bind (fun (binder,smm) -> binder.IfElse(StateMachineCondition<'saga,MTState> cond, tee (tuple smm >> onTrue), tee (tuple smm >> onFalse)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.IfElse(StateMachineCondition<'saga,MTState> cond, tuple smm >> onTrue, tuple smm >> onFalse))
 
     [<CustomOperation "ifElse">]
     member _.IfElse(state,cond,onTrue,onFalse) =
-        state |> bind (fun (binder,smm) -> binder.IfElseAsync(StateMachineAsyncCondition<'saga,MTState> cond, tee (tuple smm >> onTrue), tee (tuple smm >> onFalse)) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.IfElseAsync(StateMachineAsyncCondition<'saga,MTState> cond, tuple smm >> onTrue, tuple smm >> onFalse)) 
     
     [<CustomOperation "handle">]
     member _.Handle(state, handler) =
-        state |> bind (fun (binder,smm) -> binder.Then(handler) |> ignore)
+        state |> bind (fun (binder,smm) -> binder.Then(handler))
 
     [<CustomOperation "bind">]
     member _.Bind(state,binding) =
-        state |> bind (fun (binder,_) -> binding binder |> ignore)
+        state |> bind (fun (binder,_) -> binding binder)
 
 
 type StateMachineBuilder<'saga, 'enum
                 when 'saga :> SagaStateMachineInstance
                 and 'saga : not struct 
                 and 'enum :> Enum and 'enum: struct and 'enum: (new: unit -> 'enum)>() = 
-    member _.Yield _ =
-        printfn $"yield"
-        State<'enum>.Declare
+    let eventsCache = System.Collections.Generic.Dictionary<string,Event>()
+    member _.Yield _ = State<'enum>.Declare
         
     [<CustomOperation "event">]
     member _.Event(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>, event: IEventCorrelationConfigurator<'saga,'event> -> unit) =
-        printfn $"event"
-        state >> Event<'event>.Configure event
+        state >> Event<'event>.Configure event eventsCache.Add
     
     [<CustomOperation "instanceState">]
     member _.InstanceState(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
@@ -286,73 +274,71 @@ type StateMachineBuilder<'saga, 'enum
     [<CustomOperation "instanceState">]
     member _.InstanceState(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
                            property:Linq.Expressions.Expression<Func<'saga,MTState>>) =
-        printfn $"instanceState"
         state >> fun (smm:IStateMachineModifier<'saga>) -> smm.InstanceState property
     
     [<CustomOperation "initially">]
     member _.Initially(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>, 
-                       activities: list<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) =
-        printfn $"initially"
-        state >> State<'enum>.Initially >> Activity.BuildAll activities
+                       activities: list<(string->MTEvent)*IStateMachineEventActivitiesBuilder<'saga> -> unit>) =
+        state >> State<'enum>.Initially >> Activity.BuildAll activities eventsCache.get_Item
     
     [<CustomOperation "finally">]
     member _.Finally(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
-                     activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) =
+                     activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga>>) =
         state >> Activity.Finally activities
 
     [<CustomOperation "duringAny">]
     member _.DuringAny(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
-                       activities: list<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) =
-        state >> State<'enum>.DuringAny >> Activity.BuildAll activities
+                       activities: list<(string->MTEvent)*IStateMachineEventActivitiesBuilder<'saga> -> unit>) =
+        state >> State<'enum>.DuringAny >> Activity.BuildAll activities eventsCache.get_Item
     
     [<CustomOperation "during">]
     member _.During(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
                     mkState: IStateMachineModifier<'saga> -> MTState,
-                    activities: list<IStateMachineEventActivitiesBuilder<'saga>*IStateMachineModifier<'saga> -> unit>) =
-        state >> State<'enum>.During mkState >> Activity.BuildAll activities
+                    activities: list<(string->MTEvent)*IStateMachineEventActivitiesBuilder<'saga> -> unit>) =
+        state >> State<'enum>.During mkState >> Activity.BuildAll activities eventsCache.get_Item
 
     [<CustomOperation "whenEnter">]
     member _.WhenEnter(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
                        mkState: IStateMachineModifier<'saga> -> MTState,
-                       activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) =
+                       activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga>>) =
         state >> State<'enum>.Tuple mkState >> Activity.WhenEnter activities
 
     [<CustomOperation "whenEnterAny">]
     member _.WhenEnterAny(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
-                          activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) =
+                          activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga>>) =
         state >> Activity.WhenEnterAny activities
 
     [<CustomOperation "whenLeave">]
     member _.WhenLeave(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
                        mkState: IStateMachineModifier<'saga> -> MTState,
-                       activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) =
+                       activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga>>) =
         state >> State<'enum>.Tuple mkState >> Activity.WhenLeave activities
 
     [<CustomOperation "whenLeaveAny">]
     member _.WhenLeaveAny(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
-                          activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> unit>) =
+                          activities: list<EventActivityBinder<'saga>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga>>) =
         state >> Activity.WhenLeaveAny activities
 
     [<CustomOperation "afterLeave">]
     member _.WhenLeave(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
                        mkState: IStateMachineModifier<'saga> -> MTState,
-                       activities: list<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> unit>) =
+                       activities: list<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga,MTState>>) =
         state >> State<'enum>.Tuple mkState >> Activity.AfterLeave activities
 
     [<CustomOperation "afterLeaveAny">]
     member _.AfterLeaveAny(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
-                           activities: list<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> unit>) =
+                           activities: list<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga,MTState>>) =
         state >> Activity.AfterLeaveAny activities
 
     [<CustomOperation "beforeEnter">]
     member _.BeforeEnter(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
                          mkState: IStateMachineModifier<'saga> -> MTState,
-                         activities: list<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> unit>) =
+                         activities: list<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga,MTState>>) =
         state >> State<'enum>.Tuple mkState >> Activity.BeforeEnter activities
 
     [<CustomOperation "beforeEnterAny">]
     member _.BeforeEnterAny(state: IStateMachineModifier<'saga> -> IStateMachineModifier<'saga>,
-                            activities: list<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> unit>) =
+                            activities: list<EventActivityBinder<'saga,MTState>*IStateMachineModifier<'saga> -> EventActivityBinder<'saga,MTState>>) =
         state >> Activity.BeforeEnterAny activities
 
 
@@ -369,44 +355,44 @@ module Bindings =
                 and 'saga :> ISaga
                 and 'saga :> SagaStateMachineInstance
                 and 'event: not struct>
-            activity (builder:IStateMachineEventActivitiesBuilder<'saga>,smm:IStateMachineModifier<'saga>) =
-        builder.When(Event<'event>.Of smm, tee (tuple smm >> activity)) |> ignore
+            activity (getEvent:string->MTEvent, builder:IStateMachineEventActivitiesBuilder<'saga>) =
+        builder.When(getEvent typeof<'event>.Name |> unbox<MTEvent<'event>>,
+                     tuple (builder :> IStateMachineModifier<'saga>) >> activity) |> ignore
     
     let ignoreEvent<'saga,'event
                 when 'saga: not struct
                 and 'saga :> ISaga
                 and 'saga :> SagaStateMachineInstance
                 and 'event: not struct>
-            (builder:IStateMachineEventActivitiesBuilder<'saga>,smm:IStateMachineModifier<'saga>) =
-        builder.Ignore(Event<'event>.Of smm) |> ignore
+            (getEvent:string->MTEvent, builder:IStateMachineEventActivitiesBuilder<'saga>) =
+        builder.Ignore(getEvent typeof<'event>.Name |> unbox<MTEvent<'event>>) |> ignore
     
     let onFiltered<'saga,'event
                 when 'saga: not struct
                 and 'saga :> ISaga
                 and 'saga :> SagaStateMachineInstance
                 and 'event: not struct> 
-            filter activity (builder:IStateMachineEventActivitiesBuilder<'saga>,smm:IStateMachineModifier<'saga>) =
-        builder.When(Event<'event>.Of smm, StateMachineCondition<'saga,'event> filter, tee (tuple smm >> activity)) |> ignore
+            filter activity (getEvent:string->MTEvent, builder:IStateMachineEventActivitiesBuilder<'saga>) =
+        builder.When(getEvent typeof<'event>.Name |> unbox<MTEvent<'event>>, StateMachineCondition<'saga,'event> filter,
+                     tuple (builder :> IStateMachineModifier<'saga>) >> activity) |> ignore
         
     let transitionActivity<'saga
                 when 'saga: not struct
                 and 'saga :> ISaga
                 and 'saga :> SagaStateMachineInstance> =
-        TransitionActivityBuilder<'saga>(fun cfg args -> cfg args |> ignore)
+        TransitionActivityBuilder<'saga>()
     
     let activity<'saga
                 when 'saga: not struct
                 and 'saga :> ISaga
                 and 'saga :> SagaStateMachineInstance> =
-        ActivityBuilder<'saga>(fun cfg args -> cfg args |> ignore)
+        ActivityBuilder<'saga>()
 
     let eventActivity<'saga,'event
                 when 'saga: not struct
                 and 'saga :> ISaga
                 and 'saga :> SagaStateMachineInstance
                 and 'event: not struct> =
-        EventActivityBuilder<'saga, 'event>(fun cfg args -> 
-            printfn "eventActivity.apply"
-            cfg args |> ignore)
+        EventActivityBuilder<'saga, 'event>()
 
     let correlated<'event when 'event : not struct> = EventCorrelationBuilder<'event>()

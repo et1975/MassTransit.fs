@@ -2,6 +2,7 @@ module MassTransit.FSharp.Tests
 
 open System
 open MassTransit
+open Swensen.Unquote
 open Expecto
 
 type S = A = 0| B = 1
@@ -15,7 +16,8 @@ type TestSaga() =
     interface ISaga with
         member val CorrelationId = Guid.Empty with get,set
     member val CorrelationId = Guid.Empty with get,set
-    member val CurrentState = unbox<State> null with get,set
+
+    member val CurrentState = unbox<State> null with get, set
 
 type TestEventActivity() =
     interface IStateMachineActivity<TestSaga,E1> with
@@ -45,7 +47,6 @@ type TestMachine() =
         stateMachine<TestSaga, S> {
             event (correlated<E1> {
                 byId (fun x -> x.Message.OrderId)
-                onMissing MissingInstance.Discard
             })
             event (correlated<E2> {
                 by (fun saga ctx -> ctx.Message.Id = saga.CorrelationId)
@@ -54,15 +55,14 @@ type TestMachine() =
             instanceState (fun s -> s.CurrentState)
             initially [
                 on<TestSaga,E1> (eventActivity {
-                    transition (State.Of S.A)
                     bind Activity.OfType<TestEventActivity>
                     bind Activity.OfInstanceType<TestSagaActivity>
-                    conditionally (fun _ -> true) (eventActivity { transition State.Final })
+                    transition (State.Of S.A)
                 })
             ]
             during (State.Of S.A) [
-                onFiltered<TestSaga,E1> (fun _ ->true) (eventActivity { transition State.Final })
-                ignoreEvent<TestSaga,E2>
+                onFiltered<TestSaga,E2> (fun _ ->true) (eventActivity { transition (State.Of S.B) })
+                ignoreEvent<TestSaga,E1>
             ]
             beforeEnter (State.Of S.B) [
                 transitionActivity {
@@ -89,8 +89,19 @@ type TestMachine() =
 
 [<Tests>]
 let tests =
+    let (|->) (data:'event) (machine:#SagaStateMachine<_>,instance) =
+        machine.Events |> Seq.find(fun x -> x.Name = typeof<'event>.Name) |> unbox<MTEvent<'event>> |> fun e -> machine.RaiseEvent(instance, e, data)
+    let (@) (machine:#SagaStateMachine<_>) s =
+        machine.States |> Seq.find(fun x -> x.Name = string s)
+
     testList "unit" [
         test "Can construct StateMachine" {
             TestMachine() |> ignore
+        }
+        testTask "Transitions from initial" {
+            let m = TestMachine()
+            let saga = TestSaga()
+            do! E1(OrderId = Guid.NewGuid()) |-> (m,saga)
+            saga.CurrentState =! m @ S.A 
         }
     ]
