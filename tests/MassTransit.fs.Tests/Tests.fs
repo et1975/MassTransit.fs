@@ -4,6 +4,8 @@ open System
 open MassTransit
 open Swensen.Unquote
 open Expecto
+open MassTransit.Visualizer
+open MassTransit.SagaStateMachine
 
 type S = A = 0| B = 1
 type E1() = 
@@ -12,11 +14,11 @@ type E2() =
     member val Id = Guid.Empty with get,set
 
 type TestSaga() =
+    let mutable s = unbox<State> null
     interface SagaStateMachineInstance
     interface ISaga with
         member val CorrelationId = Guid.Empty with get,set
     member val CorrelationId = Guid.Empty with get,set
-
     member val CurrentState = unbox<State> null with get, set
 
 type TestEventActivity() =
@@ -96,7 +98,9 @@ let tests =
 
     testList "unit" [
         test "Can construct StateMachine" {
-            TestMachine() |> ignore
+            let m = TestMachine()
+            StateMachineGraphvizGenerator(m.GetGraph()).CreateDotFile()
+            |> printfn "%s"
         }
         testTask "Transitions from initial" {
             let m = TestMachine()

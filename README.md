@@ -12,7 +12,7 @@ type UpgradeStateMachine() =
             })
             event (correlated<UpgradeCommandStarted> {
                 by (fun saga ctx -> ctx.Message.Id = saga.CorrelationId)
-                onMissing Event.discard
+                onMissing MissingInstance.Discard
             })
 
             initially [

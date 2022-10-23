@@ -25,8 +25,15 @@ type InitiallyMachine() =
                     transition (State.Of S.A)
                 })
             ]
-            duringAny [
-                on<TestSaga,E2> (eventActivity { transition State.Final })
+            during (State.Of S.A) [on<TestSaga,E2> (eventActivity {
+                    bind Activity.OfInstanceType<TestSagaActivity>
+                    transition State.Final
+                })
+            ]
+            during (State.Of S.B) [on<TestSaga,E2> (eventActivity {
+                    bind Activity.OfInstanceType<TestSagaActivity>
+                    transition State.Final
+                })
             ]
         }
     )
